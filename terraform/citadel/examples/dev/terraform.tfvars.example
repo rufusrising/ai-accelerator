@@ -1,0 +1,107 @@
+# --------------------------------------------------------------------
+# Citadel greenfield example. With these inputs the module creates the
+# VNet, all subnets (including the agent subnet if you enable Foundry
+# network injection), every Private DNS zone, the Foundry account(s) +
+# project + model deployments, the APIM gateway, the usage telemetry
+# pipeline (Cosmos + Event Hub + Logic App), Managed Redis, KV, API
+# Center, and any access contracts you declare.
+# --------------------------------------------------------------------
+
+subscription_id     = "00000000-0000-0000-0000-000000000000"
+environment_name    = "dev"
+location            = "swedencentral"
+resource_group_name = "rg-citadel-dev"
+name_prefix         = "citadel"
+
+# Granting yourself Azure AI Project Manager on each Foundry account.
+# Leave blank in CI; set to the operator object ID locally.
+deployer_object_id  = ""
+
+tags = {
+  workload = "citadel-ai-hub"
+  env      = "dev"
+}
+
+# ---- Foundry accounts the module CREATES ----
+foundry_instances = [
+  {
+    name                      = "aif-citadel-swec-01"
+    location                  = "swedencentral"
+    default_project_name      = "citadel-governance-project"
+    network_injection_enabled = false  # enable once full BYO Standard Agent setup is in place
+  },
+  {
+    name                 = "aif-citadel-eus2-01"
+    location             = "eastus2"
+    default_project_name = "citadel-governance-project"
+  },
+]
+
+foundry_model_deployments = [
+  { name = "gpt-4o-mini", publisher = "OpenAI", version = "2024-07-18", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "gpt-4o",      publisher = "OpenAI", version = "2024-11-20", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "DeepSeek-R1", publisher = "DeepSeek", version = "1", capacity = 1, retirement_date = "2099-12-30", foundry_index = 0 },
+  { name = "Phi-4",       publisher = "Microsoft", version = "3", capacity = 1, retirement_date = "2099-12-30", foundry_index = 0 },
+  { name = "text-embedding-3-large", publisher = "OpenAI", version = "1", capacity = 100, foundry_index = 0 },
+  { name = "gpt-5",       publisher = "OpenAI", version = "2025-08-07", capacity = 100, retirement_date = "2027-02-05", foundry_index = 1 },
+  { name = "DeepSeek-R1", publisher = "DeepSeek", version = "1", capacity = 1, retirement_date = "2099-12-30", foundry_index = 1 },
+  { name = "text-embedding-3-large", publisher = "OpenAI", version = "1", capacity = 100, foundry_index = 1 },
+]
+
+primary_foundry_embedding_model_name = "text-embedding-3-large"
+
+# ---- VNet & DNS prefixes (module owns them) ----
+network = {
+  vnet_address_space             = "10.170.0.0/24"
+  apim_subnet_prefix             = "10.170.0.0/26"
+  private_endpoint_subnet_prefix = "10.170.0.64/26"
+  function_app_subnet_prefix     = "10.170.0.128/26"
+  agent_subnet_prefix            = "10.170.0.192/26"
+}
+
+apim = {
+  sku_name              = "StandardV2"
+  sku_capacity          = 1
+  publisher_name        = "Citadel Platform"
+  publisher_email       = "platform@example.com"
+  use_private_endpoint  = true
+  public_network_access = false
+}
+
+features = {
+  enable_pii_redaction             = true
+  enable_managed_redis             = true
+  enable_usage_pipeline            = true
+  enable_unified_ai_api            = true
+  enable_api_center                = true
+  enable_azure_ai_search           = true
+  enable_document_intelligence     = true
+  enable_openai_realtime           = true
+  enable_mcp_samples               = true
+  enable_entra_auth                = true
+  enable_jwt_auth                  = true
+  enable_foundry_network_injection = false  # See Bicep main.bicep note: only enable with full BYO Standard Agent setup
+}
+
+entra_tenant_id = "11111111-1111-1111-1111-111111111111"
+entra_client_id = "22222222-2222-2222-2222-222222222222"
+
+# ---- Optional per-team access contracts ----
+access_contracts = [
+  {
+    use_case = {
+      business_unit = "HR"
+      use_case_name = "InternalAssistant"
+      environment   = "DEV"
+    }
+    services = [
+      { code = "OAI", api_names = ["azure-openai-api"],         endpoint_secret_name = "OAI_ENDPOINT", api_key_secret_name = "OAI_KEY" },
+      { code = "DOC", api_names = ["document-intelligence-api"], endpoint_secret_name = "DOC_ENDPOINT", api_key_secret_name = "DOC_KEY" },
+    ]
+    foundry_connection = {
+      account_name        = "aif-citadel-swec-01"
+      resource_group_name = "rg-citadel-dev"
+      project_name        = "citadel-governance-project"
+    }
+  },
+]
