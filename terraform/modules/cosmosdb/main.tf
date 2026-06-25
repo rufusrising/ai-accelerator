@@ -30,6 +30,11 @@ variable "private_endpoint_location" {
   type    = string
   default = ""
 }
+
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
 variable "consistency_level" {
   type    = string
   default = "Session"
@@ -109,12 +114,16 @@ resource "azurerm_private_endpoint" "cosmos" {
     subresource_names              = ["sql"]
   }
 
-  private_dns_zone_group {
-    name                 = "default"
-    private_dns_zone_ids = [var.dns_zone_id]
+  dynamic "private_dns_zone_group" {
+    for_each = var.create_dns_a_records ? [1] : []
+    content {
+      name                 = "default"
+      private_dns_zone_ids = [var.dns_zone_id]
+    }
   }
 }
 
+output "pe_dns_configs" { value = azurerm_private_endpoint.cosmos.custom_dns_configs }
 output "account_id" { value = azurerm_cosmosdb_account.this.id }
 output "account_name" { value = azurerm_cosmosdb_account.this.name }
 output "database_name" { value = azurerm_cosmosdb_sql_database.this.name }

@@ -53,6 +53,11 @@ variable "private_endpoint_location" {
   default = ""
 }
 
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 resource "azurerm_eventhub_namespace" "this" {
   name                          = var.name
   location                      = var.location
@@ -111,11 +116,16 @@ resource "azurerm_private_endpoint" "eh" {
     subresource_names              = ["namespace"]
   }
 
-  private_dns_zone_group {
-    name                 = "default"
-    private_dns_zone_ids = [var.dns_zone_id]
+  dynamic "private_dns_zone_group" {
+    for_each = var.create_dns_a_records ? [1] : []
+    content {
+      name                 = "default"
+      private_dns_zone_ids = [var.dns_zone_id]
+    }
   }
 }
+
+output "pe_dns_configs" { value = azurerm_private_endpoint.eh.custom_dns_configs }
 
 output "namespace_id" { value = azurerm_eventhub_namespace.this.id }
 output "namespace_name" { value = azurerm_eventhub_namespace.this.name }

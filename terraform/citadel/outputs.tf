@@ -62,3 +62,16 @@ output "access_contract_products" {
     for m in module.access_contracts : m.product_ids
   ])
 }
+
+output "pe_dns_records" {
+  description = "Use when create_dns_a_records=false to hand the {fqdn, ipAddresses[]} list to a central DNS-as-code pipeline."
+  value = {
+    key_vault = module.key_vault.pe_dns_configs
+    apim      = module.apim_core.pe_dns_configs
+    cosmos    = try(module.cosmos_db[0].pe_dns_configs, [])
+    event_hub = try(module.event_hub[0].pe_dns_configs, [])
+    redis     = try(module.redis[0].pe_dns_configs, [])
+    storage   = try(module.logic_app_usage[0].pe_dns_configs, {})
+    foundry   = module.foundry.pe_dns_configs
+  }
+}

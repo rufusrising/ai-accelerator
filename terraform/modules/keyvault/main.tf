@@ -43,6 +43,21 @@ variable "private_endpoint_location" {
   default = ""
 }
 
+# CENTRALIZED DNS PATTERN
+#   true  (default) — module creates the privateDnsZoneGroup, registering
+#         the PE's A record in var.dns_zone_id automatically. Requires the
+#         deploying principal to have Private DNS Zone Contributor on the
+#         zone (even cross-subscription).
+#   false           — module skips the zone group. The PE still gets an
+#         IP from the subnet, and the FQDN + IP are surfaced via the
+#         pe_dns_configs output so an external DNS-as-code pipeline (or
+#         your central DNS team) can write the A record into the central
+#         zone. Use this when you cannot grant RBAC on the central zone.
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 variable "apim_uami_principal_id" {
   type    = string
   default = ""
@@ -80,9 +95,12 @@ resource "azurerm_private_endpoint" "kv" {
     subresource_names              = ["vault"]
   }
 
-  private_dns_zone_group {
-    name                 = "default"
-    private_dns_zone_ids = [var.dns_zone_id]
+  dynamic "private_dns_zone_group" {
+    for_each = var.create_dns_a_records ? [1] : []
+    content {
+      name                 = "default"
+      private_dns_zone_ids = [var.dns_zone_id]
+    }
   }
 }
 
@@ -97,3 +115,9 @@ resource "azurerm_role_assignment" "apim_uami_secrets_user" {
 output "id" { value = azurerm_key_vault.this.id }
 output "name" { value = azurerm_key_vault.this.name }
 output "uri" { value = azurerm_key_vault.this.vault_uri }
+
+# For central-DNS pipelines: list of { fqdn, ip_addresses[] } pulled from the PE NIC.
+# Feed these into a separate DNS-as-code pipeline that owns the central zone.
+output "pe_dns_configs" {
+  value = azurerm_private_endpoint.kv.custom_dns_configs
+}

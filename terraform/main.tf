@@ -89,6 +89,7 @@ module "key_vault" {
   resource_group_name        = data.azurerm_resource_group.rg.name
   location                   = coalesce(var.key_vault_location, var.location)
   private_endpoint_location  = var.network.vnet_location
+  create_dns_a_records       = var.create_dns_a_records
   tags                       = local.effective_tags
   tenant_id                  = coalesce(var.entra_tenant_id, data.azurerm_client_config.current.tenant_id)
   private_endpoint_subnet_id = var.network.private_endpoint_subnet_id
@@ -109,6 +110,7 @@ module "event_hub" {
   resource_group_name        = data.azurerm_resource_group.rg.name
   location                   = coalesce(var.event_hub_location, var.location)
   private_endpoint_location  = var.network.vnet_location
+  create_dns_a_records       = var.create_dns_a_records
   tags                       = local.effective_tags
   sku                        = var.event_hub.sku
   capacity                   = var.event_hub.capacity
@@ -134,6 +136,7 @@ module "cosmos_db" {
   resource_group_name        = data.azurerm_resource_group.rg.name
   location                   = coalesce(var.cosmos_location, var.location)
   private_endpoint_location  = var.network.vnet_location
+  create_dns_a_records       = var.create_dns_a_records
   tags                       = local.effective_tags
   throughput                 = var.cosmos_db_throughput
   private_endpoint_subnet_id = var.network.private_endpoint_subnet_id
@@ -175,6 +178,7 @@ module "redis" {
   resource_group_name        = data.azurerm_resource_group.rg.name
   location                   = coalesce(var.redis_location, var.location)
   private_endpoint_location  = var.network.vnet_location
+  create_dns_a_records       = var.create_dns_a_records
   tags                       = local.effective_tags
   sku_name                   = var.redis.sku_name
   sku_capacity               = var.redis.sku_capacity
@@ -214,6 +218,7 @@ module "logic_app_usage" {
   # location can diverge (but in practice always equals the VNet region).
   location                       = coalesce(var.logic_app_location, var.storage_location, var.network.vnet_location)
   private_endpoint_location      = var.network.vnet_location
+  create_dns_a_records           = var.create_dns_a_records
   tags                           = local.effective_tags
   uami_id                        = azurerm_user_assigned_identity.logic_app[0].id
   uami_principal_id              = azurerm_user_assigned_identity.logic_app[0].principal_id
@@ -262,6 +267,7 @@ module "apim_core" {
   # var.location if it differs — so misconfiguration is impossible.
   location                  = var.network.vnet_location
   private_endpoint_location = var.network.vnet_location
+  create_dns_a_records      = var.create_dns_a_records
   tags                      = local.effective_tags
   sku_name                       = var.apim.sku_name
   sku_capacity                   = var.apim.sku_capacity

@@ -82,3 +82,21 @@ output "access_contract_products" {
     for m in module.access_contracts : m.product_ids
   ])
 }
+
+output "pe_dns_records" {
+  description = <<-EOT
+    All private endpoint DNS records (FQDN + IPs) the module created. Use this when
+    var.create_dns_a_records=false to feed your central DNS-as-code pipeline. Empty
+    list elements are skipped resources (e.g. usage pipeline disabled).
+  EOT
+  value = {
+    key_vault = module.key_vault.pe_dns_configs
+    apim      = module.apim_core.pe_dns_configs
+    cosmos    = try(module.cosmos_db[0].pe_dns_configs, [])
+    event_hub = try(module.event_hub[0].pe_dns_configs, [])
+    redis     = try(module.redis[0].pe_dns_configs, [])
+    storage   = try(module.logic_app_usage[0].pe_dns_configs, {})
+    # attach mode references existing Foundry accounts — PE for those is BYO,
+    # so no pe_dns_configs to surface here. citadel mode exposes module.foundry.pe_dns_configs.
+  }
+}

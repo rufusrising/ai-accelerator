@@ -77,6 +77,11 @@ variable "private_endpoint_location" {
   default = ""
 }
 
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 variable "private_dns_zone_ids" {
   description = "DNS zone IDs required for the Foundry account PE (3 zones)."
   type = object({
@@ -254,10 +259,11 @@ resource "azapi_resource" "deployment" {
 # ------------------------------------------------------------
 
 resource "azapi_resource" "private_endpoint" {
-  count     = length(var.foundry_instances)
-  type      = "Microsoft.Network/privateEndpoints@2025-05-01"
-  parent_id = "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/${var.resource_group_name}"
-  name      = "${var.foundry_instances[count.index].name}-pe"
+  count                  = length(var.foundry_instances)
+  type                   = "Microsoft.Network/privateEndpoints@2025-05-01"
+  parent_id              = "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/${var.resource_group_name}"
+  name                   = "${var.foundry_instances[count.index].name}-pe"
+  response_export_values = ["properties.customDnsConfigs"]
   # PE always lives in the VNet's region; coalesce falls back to the
   # Foundry account region (co-located deployments) when the caller hasn't
   # passed an explicit private_endpoint_location.
@@ -287,7 +293,7 @@ resource "azapi_resource" "private_endpoint" {
 }
 
 resource "azapi_resource" "pe_dns_zone_group" {
-  count     = length(var.foundry_instances)
+  count     = var.create_dns_a_records ? length(var.foundry_instances) : 0
   type      = "Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-05-01"
   parent_id = azapi_resource.private_endpoint[count.index].id
   name      = "privateDnsZoneGroup"
@@ -417,4 +423,9 @@ output "primary_foundry_endpoint" {
 
 output "project_names" {
   value = [for p in azapi_resource.project : p.name]
+}
+
+output "pe_dns_configs" {
+  description = "Per-Foundry list of { fqdn, ipAddresses[] } records exported from the PE NIC. Each Foundry needs 3 A records (cognitiveservices / openai / services.ai). When create_dns_a_records=false, feed these into the central DNS pipeline."
+  value       = [for pe in azapi_resource.private_endpoint : try(pe.output.properties.customDnsConfigs, [])]
 }

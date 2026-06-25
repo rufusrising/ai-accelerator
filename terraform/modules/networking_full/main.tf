@@ -79,6 +79,41 @@ variable "include_azure_monitor_dns_zone" {
   default = false
 }
 
+# CENTRALIZED DNS PATTERN (matches CAF landing-zone DNS architecture)
+#   true  (default) — module creates the 12 Private DNS zones in this RG
+#         AND links them to the VNet. Use for fully greenfield single-sub
+#         deployments.
+#   false           — module creates NEITHER the zones NOR the VNet links.
+#         Caller must supply `external_private_dns_zone_ids` pointing at
+#         zones that live in a different (central) subscription / RG.
+#         The spoke VNet is expected to resolve those zones via DNS
+#         forwarders (Azure Firewall DNS proxy, DNS Private Resolver,
+#         or custom DNS servers) — that wiring lives at the hub.
+variable "create_private_dns_zones" {
+  type    = bool
+  default = true
+}
+
+variable "external_private_dns_zone_ids" {
+  description = "Required when create_private_dns_zones=false. Same shape as the root module's private_dns_zone_ids."
+  type = object({
+    key_vault          = string
+    cosmos_db          = string
+    event_hub          = string
+    storage_blob       = string
+    storage_file       = string
+    storage_table      = string
+    storage_queue      = string
+    cognitive_services = string
+    openai             = string
+    ai_services        = string
+    apim_gateway       = string
+    redis_enterprise   = string
+    azure_monitor      = optional(string, "")
+  })
+  default = null
+}
+
 # --------------------------
 # NSGs
 # --------------------------
@@ -370,7 +405,7 @@ locals {
 }
 
 resource "azurerm_private_dns_zone" "this" {
-  for_each            = toset(local.dns_zones)
+  for_each            = var.create_private_dns_zones ? toset(local.dns_zones) : toset([])
   name                = each.value
   resource_group_name = var.resource_group_name
   tags                = var.tags
@@ -415,8 +450,8 @@ output "agent_subnet_id" {
 }
 
 output "private_dns_zone_ids" {
-  description = "Map matching the shape root-module `private_dns_zone_ids` expects."
-  value = {
+  description = "Map matching the shape root-module `private_dns_zone_ids` expects. Sourced from the locally-created zones when create_private_dns_zones=true, otherwise from var.external_private_dns_zone_ids."
+  value = var.create_private_dns_zones ? {
     key_vault          = azurerm_private_dns_zone.this["privatelink.vaultcore.azure.net"].id
     cosmos_db          = azurerm_private_dns_zone.this["privatelink.documents.azure.com"].id
     event_hub          = azurerm_private_dns_zone.this["privatelink.servicebus.windows.net"].id
@@ -430,5 +465,19 @@ output "private_dns_zone_ids" {
     apim_gateway       = azurerm_private_dns_zone.this["privatelink.azure-api.net"].id
     redis_enterprise   = azurerm_private_dns_zone.this["privatelink.redis.azure.net"].id
     azure_monitor      = try(azurerm_private_dns_zone.this["privatelink.monitor.azure.com"].id, "")
+    } : {
+    key_vault          = var.external_private_dns_zone_ids.key_vault
+    cosmos_db          = var.external_private_dns_zone_ids.cosmos_db
+    event_hub          = var.external_private_dns_zone_ids.event_hub
+    storage_blob       = var.external_private_dns_zone_ids.storage_blob
+    storage_file       = var.external_private_dns_zone_ids.storage_file
+    storage_table      = var.external_private_dns_zone_ids.storage_table
+    storage_queue      = var.external_private_dns_zone_ids.storage_queue
+    cognitive_services = var.external_private_dns_zone_ids.cognitive_services
+    openai             = var.external_private_dns_zone_ids.openai
+    ai_services        = var.external_private_dns_zone_ids.ai_services
+    apim_gateway       = var.external_private_dns_zone_ids.apim_gateway
+    redis_enterprise   = var.external_private_dns_zone_ids.redis_enterprise
+    azure_monitor      = try(var.external_private_dns_zone_ids.azure_monitor, "")
   }
 }

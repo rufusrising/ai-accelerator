@@ -56,6 +56,29 @@ variable "network" {
   default = {}
 }
 
+# Centralized DNS knobs ---------------------------------------------------
+# Mirrors the attach-mode module's behaviour. By default the citadel module
+# owns the 12 Private DNS zones (RG-local) and links them to the VNet.
+# Flip these to plug into a hub-and-spoke central DNS architecture.
+
+variable "create_private_dns_zones" {
+  description = "When false, the networking_full submodule does NOT create the 12 Private DNS zones or VNet links. You must pass external_private_dns_zone_ids instead."
+  type        = bool
+  default     = true
+}
+
+variable "external_private_dns_zone_ids" {
+  description = "Required when create_private_dns_zones=false. Same shape as the attach-mode root module's private_dns_zone_ids."
+  type        = any
+  default     = null
+}
+
+variable "create_dns_a_records" {
+  description = "When false, every PE skips its privateDnsZoneGroup. Records are surfaced via the pe_dns_records output for a central DNS-as-code pipeline."
+  type        = bool
+  default     = true
+}
+
 # ============================================================
 # Foundry (this module CREATES Foundry accounts + projects)
 # ============================================================

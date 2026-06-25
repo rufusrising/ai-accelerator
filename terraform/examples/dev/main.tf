@@ -170,6 +170,11 @@ variable "apic" {
   default = {}
 }
 
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 module "ai_hub_gateway" {
   source = "../../"
 
@@ -187,9 +192,10 @@ module "ai_hub_gateway" {
   network              = var.network
   private_dns_zone_ids = var.private_dns_zone_ids
 
-  apim     = var.apim
-  features = var.features
-  apic     = var.apic
+  apim                 = var.apim
+  features             = var.features
+  apic                 = var.apic
+  create_dns_a_records = var.create_dns_a_records
 
   # Per-resource location overrides (cross-region scenario)
   key_vault_location  = var.key_vault_location

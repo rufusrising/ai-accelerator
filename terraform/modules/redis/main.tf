@@ -49,6 +49,11 @@ variable "private_endpoint_location" {
   default = ""
 }
 
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 data "azurerm_resource_group" "rg" {
   name = var.resource_group_name
 }
@@ -126,11 +131,16 @@ resource "azurerm_private_endpoint" "redis" {
     subresource_names              = ["redisEnterprise"]
   }
 
-  private_dns_zone_group {
-    name                 = "default"
-    private_dns_zone_ids = [var.dns_zone_id]
+  dynamic "private_dns_zone_group" {
+    for_each = var.create_dns_a_records ? [1] : []
+    content {
+      name                 = "default"
+      private_dns_zone_ids = [var.dns_zone_id]
+    }
   }
 }
+
+output "pe_dns_configs" { value = azurerm_private_endpoint.redis.custom_dns_configs }
 
 locals {
   host_name   = azapi_resource.cluster.output.properties.hostName

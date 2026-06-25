@@ -1,128 +1,253 @@
-# --------------------------------------------------------------------
-# Example tfvars wiring the gateway onto an existing AI Foundry, VNet
-# and Private DNS estate. Replace every placeholder before plan/apply.
+# ════════════════════════════════════════════════════════════════════════════
+#  AI Hub Gateway — ATTACH MODE — full tfvars reference
+# ════════════════════════════════════════════════════════════════════════════
+#  This file enumerates every input variable the attach-mode root module
+#  (`terraform/`) accepts. Required fields are marked. All others show their
+#  default so you can keep, comment-out, or tweak.
 #
-# CROSS-REGION SCENARIO illustrated below:
-#   * Private VNet lives in eastus2 (your only private network).
-#   * API Center is provisioned in eastus (API Center isn't available in
-#     eastus2 as of 2026-06; it has no Private Endpoint anyway).
-#   * Every other resource lives in eastus2 alongside the VNet, with PEs
-#     placed in the eastus2 PE subnet.
-#
-# If you need a different layout (e.g. Foundry in westus3, Cosmos in
-# centralus), set the per-resource location overrides below. The PE for
-# each one is ALWAYS created in `network.vnet_location` regardless of where
-# the service itself is — Azure supports cross-region PEs for KV, Cosmos,
-# Event Hub, Storage, Redis, and Cognitive Services.
-# --------------------------------------------------------------------
+#  Scenario shown:
+#    - Private VNet lives in eastus2 (single VNet, your only private network)
+#    - Existing AI Foundry account already in eastus2
+#    - Central Private DNS zones in a connectivity subscription
+#    - API Center placed in eastus (no PE; region irrelevant for PE)
+#    - APIM StandardV2 with PE in the eastus2 VNet
+#    - APIM → Foundry uses MANAGED IDENTITY (default), no api-key
+# ════════════════════════════════════════════════════════════════════════════
 
-subscription_id     = "00000000-0000-0000-0000-000000000000"
-environment_name    = "dev"
+# ─── 1. Provider / subscription context ────────────────────────────────────
 
-# Default region for resources. APIM is FORCED to network.vnet_location
-# regardless of var.location (V2 SKU subnet-integration requirement).
-location            = "eastus2"
+subscription_id = "00000000-0000-0000-0000-000000000000"   # REQUIRED
 
-resource_group_name = "rg-aihub-dev"
-name_prefix         = "aihub"
+# ─── 2. Identity & RG ──────────────────────────────────────────────────────
+
+environment_name    = "dev"                  # REQUIRED — used in tags
+location            = "eastus2"              # REQUIRED — default region for resources
+                                             # APIM is FORCED to network.vnet_location
+                                             # regardless of this value.
+resource_group_name = "rg-aihub-dev"         # REQUIRED — must already exist
+name_prefix         = "aihub"                # default: "aihub"
 
 tags = {
-  workload = "ai-hub-gateway"
-  env      = "dev"
+  workload        = "ai-hub-gateway"
+  env             = "dev"
+  costcenter      = "1234"
+  SecurityControl = "Ignore"
 }
 
-# ---- Existing Foundry (first entry is PRIMARY) ----
+# ─── 3. Existing AI Foundry (FIRST entry is PRIMARY) ───────────────────────
+
 foundry = [
   {
-    account_name        = "aif-platform-eus2-01"
-    resource_group_name = "rg-foundry-shared"
-    project_name        = "platform-governance"
-    location            = "eastus2"
+    account_name        = "aif-platform-eus2-01"           # REQUIRED
+    resource_group_name = "rg-foundry-shared"              # REQUIRED
+    subscription_id     = ""                                # optional — defaults to provider sub
+    project_name        = "platform-governance"             # optional, for Foundry connections
+    location            = "eastus2"                         # optional, informational
   },
+  # Add more entries for additional regional Foundry accounts:
+  # {
+  #   account_name        = "aif-platform-westeurope-01"
+  #   resource_group_name = "rg-foundry-shared"
+  #   project_name        = "platform-governance"
+  #   location            = "westeurope"
+  # },
 ]
 
+# Model deployments to create on each Foundry account. foundry_index targets
+# a specific entry in `foundry` above; omit it to deploy to all entries.
 foundry_model_deployments = [
-  { name = "gpt-4o-mini",           publisher = "OpenAI", version = "2024-07-18", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
-  { name = "gpt-4o",                publisher = "OpenAI", version = "2024-11-20", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
-  { name = "text-embedding-3-large", publisher = "OpenAI", version = "1",         sku = "GlobalStandard", capacity = 100, foundry_index = 0 },
+  { name = "gpt-4o-mini",            publisher = "OpenAI",    version = "2024-07-18", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "gpt-4o",                 publisher = "OpenAI",    version = "2024-11-20", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "gpt-5",                  publisher = "OpenAI",    version = "2025-08-07", sku = "GlobalStandard", capacity = 100, retirement_date = "2027-02-05", foundry_index = 0, api_version = "2025-04-01-preview", timeout = 180 },
+  { name = "DeepSeek-R1",            publisher = "DeepSeek",  version = "1",          sku = "GlobalStandard", capacity = 1,   retirement_date = "2099-12-30", foundry_index = 0, inference_api_version = "2024-05-01-preview" },
+  { name = "Phi-4",                  publisher = "Microsoft", version = "3",          sku = "GlobalStandard", capacity = 1,   retirement_date = "2099-12-30", foundry_index = 0, inference_api_version = "2024-05-01-preview" },
+  { name = "text-embedding-3-large", publisher = "OpenAI",    version = "1",          sku = "GlobalStandard", capacity = 100, foundry_index = 0 },
 ]
 
-primary_foundry_embedding_model_name = "text-embedding-3-large"
-foundry_api_key_secret_uri           = "" # MI auth, no api-key
+primary_foundry_embedding_model_name = "text-embedding-3-large"  # default
 
-# ---- BYO networking (VNet in eastus2) ----
+# DEPRECATED for default MI-auth flow. Kept for cases where you add an
+# EXTRA api-key-based LLM backend via `llm_backends` below.
+foundry_api_key_secret_uri = ""
+
+# ─── 4. BYO networking ─────────────────────────────────────────────────────
+
 network = {
-  vnet_id                    = "/subscriptions/<sub>/resourceGroups/rg-platform-network/providers/Microsoft.Network/virtualNetworks/vnet-platform-hub-eus2"
-  vnet_location              = "eastus2"   # ← drives PE location for every resource
+  vnet_id                    = "/subscriptions/<sub>/resourceGroups/rg-platform-network/providers/Microsoft.Network/virtualNetworks/vnet-platform-hub-eus2"   # REQUIRED
+  vnet_location              = "eastus2"   # REQUIRED — drives PE location
   apim_subnet_id             = "/subscriptions/<sub>/resourceGroups/rg-platform-network/providers/Microsoft.Network/virtualNetworks/vnet-platform-hub-eus2/subnets/snet-apim"
   private_endpoint_subnet_id = "/subscriptions/<sub>/resourceGroups/rg-platform-network/providers/Microsoft.Network/virtualNetworks/vnet-platform-hub-eus2/subnets/snet-pe"
   function_app_subnet_id     = "/subscriptions/<sub>/resourceGroups/rg-platform-network/providers/Microsoft.Network/virtualNetworks/vnet-platform-hub-eus2/subnets/snet-functionapp"
+  agent_subnet_id            = ""   # only required if you add VNet-injected Foundry
 }
 
-# Private DNS zones linked to the eastus2 VNet
+# ─── 5. Central private DNS zones ──────────────────────────────────────────
+# Zones live in a CENTRAL connectivity subscription. The VNet resolves them
+# via DNS forwarders in the hub (Azure Firewall DNS proxy / DNS Private
+# Resolver) — the zones do NOT need to be linked to network.vnet_id directly.
+
+create_dns_a_records = true   # true: Terraform writes A records into the
+                               #       central zones (needs Private DNS Zone
+                               #       Contributor on each zone, cross-sub OK).
+                               # false: skip A-record creation; pick up the
+                               #        records from the `pe_dns_records`
+                               #        output and feed your DNS pipeline.
+
 private_dns_zone_ids = {
-  key_vault          = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
-  cosmos_db          = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.documents.azure.com"
-  event_hub          = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.servicebus.windows.net"
-  storage_blob       = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
-  storage_file       = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net"
-  storage_table      = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net"
-  storage_queue      = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.queue.core.windows.net"
-  cognitive_services = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com"
-  openai             = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com"
-  ai_services        = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.services.ai.azure.com"
-  apim_gateway       = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.azure-api.net"
-  redis_enterprise   = "/subscriptions/<sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.redis.azure.net"
+  key_vault          = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+  cosmos_db          = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.documents.azure.com"
+  event_hub          = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.servicebus.windows.net"
+  storage_blob       = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+  storage_file       = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net"
+  storage_table      = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net"
+  storage_queue      = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.queue.core.windows.net"
+  cognitive_services = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com"
+  openai             = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com"
+  ai_services        = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.services.ai.azure.com"
+  apim_gateway       = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.azure-api.net"
+  redis_enterprise   = "/subscriptions/<dns-sub>/resourceGroups/rg-platform-dns/providers/Microsoft.Network/privateDnsZones/privatelink.redis.azure.net"
+  azure_monitor      = ""   # optional — only if features.use_azure_monitor_private_link_scope=true
 }
 
-# ---- Cross-region overrides ----
-# Leave any of these blank to inherit var.location (eastus2 above).
-# Set only when the resource type isn't available in your VNet's region.
-key_vault_location  = "" # default: eastus2
-cosmos_location     = "" # default: eastus2
-event_hub_location  = "" # default: eastus2
-redis_location      = "" # default: eastus2
-storage_location    = "" # default: eastus2
-logic_app_location  = "" # default: eastus2 (must match VNet region — see note in module)
-monitoring_location = "" # default: eastus2
+# ─── 6. Cross-region per-resource location overrides ───────────────────────
+# Leave blank to inherit var.location. Set when the service type isn't
+# available in your VNet's region. PE is ALWAYS placed in network.vnet_location.
 
-# API Center — has its own location field (Bicep parity).
-# Allowed regions: australiaeast, canadacentral, centralindia, eastus,
-# francecentral, swedencentral, uksouth, westeurope.
-# API Center has NO Private Endpoint, so cross-region is fine.
-apic = {
-  sku      = "Free"
-  location = "eastus"   # ← different region from VNet (eastus2) is OK
+key_vault_location  = ""   # default: eastus2
+cosmos_location     = ""   # default: eastus2
+event_hub_location  = ""   # default: eastus2
+redis_location      = ""   # default: eastus2
+storage_location    = ""   # default: eastus2 (must equal vnet_location — Logic App constraint)
+logic_app_location  = ""   # default: eastus2 (must equal vnet_location — VNet integration NIC)
+monitoring_location = ""   # default: eastus2
+
+# ─── 7. Feature flags ──────────────────────────────────────────────────────
+
+features = {
+  enable_ai_model_inference            = true
+  enable_document_intelligence         = true
+  enable_azure_ai_search               = true
+  enable_pii_redaction                 = true
+  enable_openai_realtime               = true
+  enable_unified_ai_api                = true
+  enable_api_center                    = true
+  enable_managed_redis                 = true
+  enable_usage_pipeline                = true   # Cosmos + EH + Logic App
+  enable_mcp_samples                   = true
+  enable_entra_auth                    = true
+  enable_jwt_auth                      = true
+  use_azure_monitor_private_link_scope = false
+  create_app_insights_dashboards       = false
 }
+
+# ─── 8. Log Analytics (re-use vs create) ───────────────────────────────────
+
+use_existing_log_analytics = false
+existing_log_analytics = {
+  name                = ""    # required when use_existing_log_analytics=true
+  resource_group_name = ""
+  subscription_id     = ""    # optional, defaults to provider sub
+}
+
+# ─── 9. APIM ───────────────────────────────────────────────────────────────
 
 apim = {
-  # APIM v2 forces location = network.vnet_location regardless of var.location.
-  sku_name              = "StandardV2"
+  sku_name              = "StandardV2"        # StandardV2 | PremiumV2 | Premium | Developer
   sku_capacity          = 1
   publisher_name        = "Platform Team"
   publisher_email       = "platform@example.com"
-  use_private_endpoint  = true
-  public_network_access = false
+  public_network_access = false               # V2 only
+  use_private_endpoint  = true                # V2 only
+  zones                 = []                  # e.g. ["1","2","3"] for Premium zone redundancy
 }
 
-features = {
-  enable_pii_redaction         = true
-  enable_managed_redis         = true
-  enable_usage_pipeline        = true
-  enable_unified_ai_api        = true
-  enable_api_center            = true
-  enable_azure_ai_search       = true
-  enable_document_intelligence = true
-  enable_openai_realtime       = true
-  enable_mcp_samples           = true
-  enable_entra_auth            = true
-  enable_jwt_auth              = true
-}
+apim_redis_cache_name = "redis-cache"
+
+# ─── 10. Extra LLM backends (Bedrock, Anthropic, Gemini, etc.) ─────────────
+# Foundry backends are auto-generated from `foundry` above. Use this only for
+# EXTRA, non-Foundry providers. Override an auto-generated Foundry backend
+# by passing an entry with the same backend_id ("<foundry_name>-<index>").
+
+llm_backends = [
+  # Example: Bedrock with SigV4 auth
+  # {
+  #   backend_id   = "aws-bedrock-us-east-1"
+  #   backend_type = "aws-bedrock"
+  #   endpoint     = "https://bedrock-runtime.us-east-1.amazonaws.com"
+  #   auth_type    = "aws-sigv4"
+  #   priority     = 2
+  #   weight       = 50
+  #   supported_models = [
+  #     { name = "anthropic.claude-3-5-sonnet-20240620-v1:0", model_format = "Anthropic", model_version = "1" }
+  #   ]
+  # },
+
+  # Example: Anthropic direct with api-key, KV-backed
+  # {
+  #   backend_id        = "anthropic-prod"
+  #   backend_type      = "anthropic"
+  #   endpoint          = "https://api.anthropic.com"
+  #   auth_type         = "api-key-anthropic"
+  #   auth_secret_kv_id = "https://kv-platform-shared.vault.azure.net/secrets/anthropic-api-key"
+  #   named_value_key   = "anthropic-key"
+  #   priority          = 1
+  #   weight            = 100
+  #   supported_models = [
+  #     { name = "claude-3-5-sonnet-20241022", model_format = "Anthropic", model_version = "1" }
+  #   ]
+  # },
+]
+
+# ─── 11. Azure AI Search backends exposed via APIM /search ─────────────────
+
+ai_search_instances = [
+  # { name = "ai-search-01", url = "https://my-search-01.search.windows.net/", description = "Primary AI Search" },
+]
+
+# ─── 12. Entra ID (JWT validation + AAD policies) ──────────────────────────
 
 entra_tenant_id = "11111111-1111-1111-1111-111111111111"
-entra_client_id = "22222222-2222-2222-2222-222222222222"
+entra_client_id = "22222222-2222-2222-2222-222222222222"   # App Registration ID
+entra_audience  = ""   # default: "api://<entra_client_id>"
 
-# ---- Optional per-team access contracts ----
+# ─── 13. Azure Managed Redis ───────────────────────────────────────────────
+
+redis = {
+  sku_name            = "Balanced_B10"
+  sku_capacity        = 2                  # Enterprise SKUs only
+  minimum_tls_version = "1.2"
+}
+
+# ─── 14. Cosmos DB (usage store) ───────────────────────────────────────────
+
+cosmos_db_throughput = 400
+
+# ─── 15. Event Hub (usage stream) ──────────────────────────────────────────
+
+event_hub = {
+  sku                      = "Standard"
+  capacity                 = 1
+  auto_inflate_enabled     = true
+  maximum_throughput_units = 20
+  message_retention_days   = 7
+  public_network_access    = true   # needed for APIM v2 provisioning
+}
+
+# ─── 16. Logic App (usage processor) ───────────────────────────────────────
+
+logic_app_sku_capacity = 1
+
+# ─── 17. API Center ────────────────────────────────────────────────────────
+
+apic = {
+  sku      = "Free"            # Free | Standard
+  location = "eastus"          # API Center can be in a different region from VNet
+}
+
+# ─── 18. Per-tenant access contracts ───────────────────────────────────────
+# Each entry creates products + subscriptions + KV secrets + optional Foundry
+# connection. Add as many as you need.
+
 access_contracts = [
   {
     use_case = {
@@ -131,13 +256,37 @@ access_contracts = [
       environment   = "DEV"
     }
     services = [
-      { code = "OAI", api_names = ["azure-openai-api"],         endpoint_secret_name = "OAI_ENDPOINT", api_key_secret_name = "OAI_KEY" },
-      { code = "DOC", api_names = ["document-intelligence-api"], endpoint_secret_name = "DOC_ENDPOINT", api_key_secret_name = "DOC_KEY" },
+      {
+        code                    = "OAI"
+        api_names               = ["azure-openai-api"]
+        product_policy_xml_path = ""   # leave blank for default rate-limit policy
+        endpoint_secret_name    = "OAI_ENDPOINT"
+        api_key_secret_name     = "OAI_KEY"
+      },
+      {
+        code                    = "DOC"
+        api_names               = ["document-intelligence-api"]
+        product_policy_xml_path = ""
+        endpoint_secret_name    = "DOC_ENDPOINT"
+        api_key_secret_name     = "DOC_KEY"
+      },
     ]
+    product_terms    = "Standard tenant terms"
+    write_kv_secrets = true
     foundry_connection = {
       account_name        = "aif-platform-eus2-01"
       resource_group_name = "rg-foundry-shared"
       project_name        = "platform-governance"
+      connection_prefix   = ""        # default: "Hub-<bu>-<usecase>-<env>"
+      shared_to_all       = false
     }
   },
+  # Second tenant example:
+  # {
+  #   use_case = { business_unit = "FIN", use_case_name = "Reporting", environment = "PROD" }
+  #   services = [
+  #     { code = "OAI", api_names = ["azure-openai-api"], endpoint_secret_name = "OAI_ENDPOINT", api_key_secret_name = "OAI_KEY" }
+  #   ]
+  #   foundry_connection = null   # skip Foundry connection for this tenant
+  # },
 ]

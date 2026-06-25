@@ -32,6 +32,11 @@ variable "private_endpoint_location" {
   default = ""
 }
 
+variable "create_dns_a_records" {
+  type    = bool
+  default = true
+}
+
 variable "storage_blob_dns_zone_id" { type = string }
 variable "storage_file_dns_zone_id" { type = string }
 variable "storage_table_dns_zone_id" { type = string }
@@ -134,10 +139,18 @@ resource "azurerm_private_endpoint" "storage" {
     subresource_names              = [each.value.subresource]
   }
 
-  private_dns_zone_group {
-    name                 = "default"
-    private_dns_zone_ids = [each.value.dns]
+  dynamic "private_dns_zone_group" {
+    for_each = var.create_dns_a_records ? [1] : []
+    content {
+      name                 = "default"
+      private_dns_zone_ids = [each.value.dns]
+    }
   }
+}
+
+output "pe_dns_configs" {
+  description = "Map of subresource -> custom_dns_configs (FQDN + IPs). Feed into central DNS pipeline when create_dns_a_records=false."
+  value       = { for k, pe in azurerm_private_endpoint.storage : k => pe.custom_dns_configs }
 }
 
 # ============================================================

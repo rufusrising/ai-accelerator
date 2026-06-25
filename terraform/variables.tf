@@ -176,11 +176,32 @@ variable "network" {
   })
 }
 
+variable "create_dns_a_records" {
+  description = <<-EOT
+    Whether each private endpoint's privateDnsZoneGroup (the resource that writes the
+    A record into the central DNS zone) is created by this module.
+
+    true  (default) — module creates the group. Requires the deploying principal to
+          hold `Private DNS Zone Contributor` on each zone in var.private_dns_zone_ids,
+          even when the zones live in a different subscription.
+    false           — module SKIPS the group. The PE still gets a NIC + IP, and the
+          {fqdn, ip_addresses[]} pairs are surfaced via the `pe_dns_records` output
+          so your central DNS-as-code pipeline can write the A records out-of-band.
+  EOT
+  type    = bool
+  default = true
+}
+
 variable "private_dns_zone_ids" {
   description = <<-EOT
-    Existing Private DNS zone resource IDs. All must already be linked to `network.vnet_id`
-    (or to the hub VNet if you peer). Keys map 1:1 to the privatelink zones the accelerator
-    needs.
+    Existing Private DNS zone resource IDs. The VNet only needs to RESOLVE these zones
+    (typically via Azure Firewall DNS proxy or a DNS Private Resolver in the hub) — the
+    zones do NOT need to be linked to var.network.vnet_id directly. This matches the CAF
+    centralized-DNS landing-zone pattern where DNS zones live in a connectivity sub.
+
+    When create_dns_a_records=true, the deploying principal must hold Private DNS Zone
+    Contributor on each zone (cross-sub RBAC is fine). When false, the zones can be in
+    any sub regardless of your RBAC.
   EOT
   type = object({
     key_vault          = string               # privatelink.vaultcore.azure.net

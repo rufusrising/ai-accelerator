@@ -76,9 +76,13 @@ module "networking" {
   private_endpoint_subnet_prefix = var.network.private_endpoint_subnet_prefix
   function_app_subnet_prefix    = var.network.function_app_subnet_prefix
   agent_subnet_prefix           = var.network.agent_subnet_prefix
-  enable_agent_subnet           = local.features.enable_foundry_network_injection
-  is_apim_v2_sku                = local.is_v2_apim
+  enable_agent_subnet            = local.features.enable_foundry_network_injection
+  is_apim_v2_sku                 = local.is_v2_apim
   include_azure_monitor_dns_zone = local.features.use_azure_monitor_private_link_scope
+
+  # Centralized DNS plumbing (CAF landing-zone pattern)
+  create_private_dns_zones      = var.create_private_dns_zones
+  external_private_dns_zone_ids = var.external_private_dns_zone_ids
 }
 
 # ============================================================
@@ -112,6 +116,7 @@ module "key_vault" {
   tags                       = local.effective_tags
   tenant_id                  = coalesce(var.entra_tenant_id, data.azurerm_client_config.current.tenant_id)
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
+  create_dns_a_records       = var.create_dns_a_records
   private_endpoint_name      = local.names.kv_pe
   dns_zone_id                = module.networking.private_dns_zone_ids.key_vault
   apim_uami_principal_id     = azurerm_user_assigned_identity.apim.principal_id
@@ -137,6 +142,7 @@ module "event_hub" {
   public_network_access      = var.event_hub.public_network_access
   enable_pii_hub             = local.features.enable_pii_redaction
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
+  create_dns_a_records       = var.create_dns_a_records
   private_endpoint_name      = local.names.eh_pe
   dns_zone_id                = module.networking.private_dns_zone_ids.event_hub
 }
@@ -155,6 +161,7 @@ module "cosmos_db" {
   tags                       = local.effective_tags
   throughput                 = var.cosmos_db_throughput
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
+  create_dns_a_records       = var.create_dns_a_records
   private_endpoint_name      = local.names.cosmos_pe
   dns_zone_id                = module.networking.private_dns_zone_ids.cosmos_db
 }
@@ -195,6 +202,7 @@ module "redis" {
   sku_capacity               = var.redis.sku_capacity
   minimum_tls_version        = var.redis.minimum_tls_version
   private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
+  create_dns_a_records       = var.create_dns_a_records
   private_endpoint_name      = local.names.redis_pe
   dns_zone_id                = module.networking.private_dns_zone_ids.redis_enterprise
 }
@@ -214,6 +222,7 @@ module "foundry" {
   public_network_access_enabled   = false
   disable_local_auth              = false
   private_endpoint_subnet_id      = module.networking.private_endpoint_subnet_id
+  create_dns_a_records            = var.create_dns_a_records
   agent_subnet_id                 = local.features.enable_foundry_network_injection ? module.networking.agent_subnet_id : ""
   apim_uami_principal_id          = azurerm_user_assigned_identity.apim.principal_id
   deployer_object_id              = var.deployer_object_id
@@ -245,6 +254,7 @@ module "logic_app_usage" {
   uami_principal_id             = azurerm_user_assigned_identity.logic_app[0].principal_id
   function_app_subnet_id        = module.networking.function_app_subnet_id
   private_endpoint_subnet_id    = module.networking.private_endpoint_subnet_id
+  create_dns_a_records          = var.create_dns_a_records
   storage_blob_dns_zone_id      = module.networking.private_dns_zone_ids.storage_blob
   storage_file_dns_zone_id      = module.networking.private_dns_zone_ids.storage_file
   storage_table_dns_zone_id     = module.networking.private_dns_zone_ids.storage_table
@@ -292,6 +302,7 @@ module "apim_core" {
   zones                         = var.apim.zones
   apim_subnet_id                = module.networking.apim_subnet_id
   private_endpoint_subnet_id    = module.networking.private_endpoint_subnet_id
+  create_dns_a_records          = var.create_dns_a_records
   use_private_endpoint          = var.apim.use_private_endpoint
   public_network_access_enabled = var.apim.public_network_access
   pe_name                       = local.names.apim_pe

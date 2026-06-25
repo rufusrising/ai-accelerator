@@ -1,92 +1,227 @@
-# --------------------------------------------------------------------
-# Citadel greenfield example. With these inputs the module creates the
-# VNet, all subnets (including the agent subnet if you enable Foundry
-# network injection), every Private DNS zone, the Foundry account(s) +
-# project + model deployments, the APIM gateway, the usage telemetry
-# pipeline (Cosmos + Event Hub + Logic App), Managed Redis, KV, API
-# Center, and any access contracts you declare.
-# --------------------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
+#  Citadel — GREENFIELD MODE — full tfvars reference
+# ════════════════════════════════════════════════════════════════════════════
+#  This file enumerates every input variable the citadel root module
+#  (`terraform/citadel/`) accepts. Use this when you want one Terraform run
+#  to provision the VNet, subnets, DNS zones, Foundry account(s), APIM,
+#  Cosmos, Event Hub, Redis, Logic App, KV, API Center, and access contracts
+#  end-to-end.
+#
+#  Defaults mirror the upstream Bicep accelerator `main.bicep` /
+#  `main.parameters.dev.bicepparam`.
+# ════════════════════════════════════════════════════════════════════════════
 
-subscription_id     = "00000000-0000-0000-0000-000000000000"
-environment_name    = "dev"
-location            = "swedencentral"
-resource_group_name = "rg-citadel-dev"
-name_prefix         = "citadel"
+# ─── 1. Provider / subscription context ────────────────────────────────────
 
-# Granting yourself Azure AI Project Manager on each Foundry account.
-# Leave blank in CI; set to the operator object ID locally.
-deployer_object_id  = ""
+subscription_id = "00000000-0000-0000-0000-000000000000"   # REQUIRED
+
+# ─── 2. Identity & RG ──────────────────────────────────────────────────────
+
+environment_name    = "dev"                  # REQUIRED — tagged on every resource
+location            = "swedencentral"        # REQUIRED — Foundry-supported region
+                                             # (uaenorth, southafricanorth, westeurope,
+                                             #  southcentralus, australiaeast, canadaeast,
+                                             #  eastus, eastus2, francecentral, japaneast,
+                                             #  northcentralus, swedencentral,
+                                             #  switzerlandnorth, uksouth)
+resource_group_name = "rg-citadel-dev"       # REQUIRED — must already exist
+name_prefix         = "citadel"              # default: "citadel"
 
 tags = {
-  workload = "citadel-ai-hub"
-  env      = "dev"
+  workload        = "citadel-ai-hub"
+  env             = "dev"
+  costcenter      = "1234"
+  SecurityControl = "Ignore"
 }
 
-# ---- Foundry accounts the module CREATES ----
+# Optional — operator/CI Object ID. Granted Azure AI Project Manager on
+# each Foundry account so the project surfaces in Foundry Studio. Leave blank
+# in CI; set locally with: `az ad signed-in-user show --query id -o tsv`.
+deployer_object_id = ""
+
+# ─── 3. Foundry accounts the module CREATES ────────────────────────────────
+# FIRST entry is the primary — its endpoint is the content-safety + PII
+# Language Service backend AND can host model deployments.
+
 foundry_instances = [
   {
-    name                      = "aif-citadel-swec-01"
-    location                  = "swedencentral"
+    name                      = "aif-citadel-swec-01"       # REQUIRED
+    location                  = "swedencentral"             # required when ≠ var.location
+    custom_subdomain_name     = ""                          # default: lowercase(name)
     default_project_name      = "citadel-governance-project"
-    network_injection_enabled = false  # enable once full BYO Standard Agent setup is in place
+    network_injection_enabled = false                       # see features.enable_foundry_network_injection
   },
   {
-    name                 = "aif-citadel-eus2-01"
-    location             = "eastus2"
-    default_project_name = "citadel-governance-project"
+    name                      = "aif-citadel-eus2-01"
+    location                  = "eastus2"
+    default_project_name      = "citadel-governance-project"
+    network_injection_enabled = false   # only first instance can use the agent subnet (regional)
   },
 ]
 
 foundry_model_deployments = [
-  { name = "gpt-4o-mini", publisher = "OpenAI", version = "2024-07-18", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
-  { name = "gpt-4o",      publisher = "OpenAI", version = "2024-11-20", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
-  { name = "DeepSeek-R1", publisher = "DeepSeek", version = "1", capacity = 1, retirement_date = "2099-12-30", foundry_index = 0 },
-  { name = "Phi-4",       publisher = "Microsoft", version = "3", capacity = 1, retirement_date = "2099-12-30", foundry_index = 0 },
-  { name = "text-embedding-3-large", publisher = "OpenAI", version = "1", capacity = 100, foundry_index = 0 },
-  { name = "gpt-5",       publisher = "OpenAI", version = "2025-08-07", capacity = 100, retirement_date = "2027-02-05", foundry_index = 1 },
-  { name = "DeepSeek-R1", publisher = "DeepSeek", version = "1", capacity = 1, retirement_date = "2099-12-30", foundry_index = 1 },
-  { name = "text-embedding-3-large", publisher = "OpenAI", version = "1", capacity = 100, foundry_index = 1 },
+  { name = "gpt-4o-mini",            publisher = "OpenAI",    version = "2024-07-18", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "gpt-4o",                 publisher = "OpenAI",    version = "2024-11-20", sku = "GlobalStandard", capacity = 100, retirement_date = "2026-09-30", foundry_index = 0 },
+  { name = "DeepSeek-R1",            publisher = "DeepSeek",  version = "1",          sku = "GlobalStandard", capacity = 1,   retirement_date = "2099-12-30", foundry_index = 0, inference_api_version = "2024-05-01-preview" },
+  { name = "Phi-4",                  publisher = "Microsoft", version = "3",          sku = "GlobalStandard", capacity = 1,   retirement_date = "2099-12-30", foundry_index = 0, inference_api_version = "2024-05-01-preview" },
+  { name = "text-embedding-3-large", publisher = "OpenAI",    version = "1",          sku = "GlobalStandard", capacity = 100, foundry_index = 0 },
+  { name = "gpt-5",                  publisher = "OpenAI",    version = "2025-08-07", sku = "GlobalStandard", capacity = 100, retirement_date = "2027-02-05", foundry_index = 1 },
+  { name = "DeepSeek-R1",            publisher = "DeepSeek",  version = "1",          sku = "GlobalStandard", capacity = 1,   retirement_date = "2099-12-30", foundry_index = 1, inference_api_version = "2024-05-01-preview" },
+  { name = "text-embedding-3-large", publisher = "OpenAI",    version = "1",          sku = "GlobalStandard", capacity = 100, foundry_index = 1 },
 ]
 
-primary_foundry_embedding_model_name = "text-embedding-3-large"
+primary_foundry_embedding_model_name = "text-embedding-3-large"   # default
 
-# ---- VNet & DNS prefixes (module owns them) ----
+# ─── 4. VNet (the module OWNS this) ────────────────────────────────────────
+
 network = {
   vnet_address_space             = "10.170.0.0/24"
   apim_subnet_prefix             = "10.170.0.0/26"
   private_endpoint_subnet_prefix = "10.170.0.64/26"
   function_app_subnet_prefix     = "10.170.0.128/26"
-  agent_subnet_prefix            = "10.170.0.192/26"
+  agent_subnet_prefix            = "10.170.0.192/26"   # used only when network injection is on
 }
 
+# ─── 5. Private DNS — local or centralized ─────────────────────────────────
+
+# true  (default): module creates the 12 Private DNS zones in the citadel RG
+#                  AND links them to the VNet. Fully self-contained.
+# false:           module skips zone creation + VNet linking. You must
+#                  supply external_private_dns_zone_ids (zones live in a
+#                  central connectivity subscription).
+create_private_dns_zones = true
+
+# Required when create_private_dns_zones=false. Same shape as the attach
+# module's private_dns_zone_ids variable.
+external_private_dns_zone_ids = null
+# external_private_dns_zone_ids = {
+#   key_vault          = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+#   cosmos_db          = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.documents.azure.com"
+#   event_hub          = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.servicebus.windows.net"
+#   storage_blob       = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+#   storage_file       = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net"
+#   storage_table      = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net"
+#   storage_queue      = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.queue.core.windows.net"
+#   cognitive_services = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com"
+#   openai             = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com"
+#   ai_services        = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.services.ai.azure.com"
+#   apim_gateway       = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.azure-api.net"
+#   redis_enterprise   = "/subscriptions/<dns-sub>/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.redis.azure.net"
+#   azure_monitor      = ""
+# }
+
+# true  (default): Terraform writes A records into each Private DNS zone
+#                  (needs Private DNS Zone Contributor on each zone — cross-sub
+#                  RBAC is fine when zones live in a central sub).
+# false:           skip A-record creation entirely; pick up the `pe_dns_records`
+#                  output and feed your central DNS-as-code pipeline.
+create_dns_a_records = true
+
+# ─── 6. Feature flags ──────────────────────────────────────────────────────
+
+features = {
+  enable_ai_model_inference            = true
+  enable_document_intelligence         = true
+  enable_azure_ai_search               = true
+  enable_pii_redaction                 = true
+  enable_openai_realtime               = true
+  enable_unified_ai_api                = true
+  enable_api_center                    = true
+  enable_managed_redis                 = true
+  enable_usage_pipeline                = true   # Cosmos + EH + Logic App
+  enable_mcp_samples                   = true
+  enable_entra_auth                    = true
+  enable_jwt_auth                      = true
+  enable_foundry_network_injection     = false  # see CAUTION below
+  use_azure_monitor_private_link_scope = false
+  create_app_insights_dashboards       = false
+}
+
+# CAUTION: enable_foundry_network_injection only works when the full BYO
+# Standard Agent setup (Storage + AI Search + Cosmos + capabilityHost) is
+# already in place — otherwise aml_aiagentservice fails to provision. Leave
+# false for first deploys; enable later when the BYO Standard Agent is wired.
+
+# ─── 7. Log Analytics (re-use vs create) ───────────────────────────────────
+
+use_existing_log_analytics = false
+existing_log_analytics = {
+  name                = ""    # required when use_existing_log_analytics=true
+  resource_group_name = ""
+  subscription_id     = ""    # optional, defaults to provider sub
+}
+
+# ─── 8. APIM ───────────────────────────────────────────────────────────────
+
 apim = {
-  sku_name              = "StandardV2"
+  sku_name              = "StandardV2"        # StandardV2 | PremiumV2 | Premium | Developer
   sku_capacity          = 1
   publisher_name        = "Citadel Platform"
   publisher_email       = "platform@example.com"
-  use_private_endpoint  = true
-  public_network_access = false
+  public_network_access = false               # V2 only
+  use_private_endpoint  = true                # V2 only
+  zones                 = []                  # e.g. ["1","2","3"] for Premium
 }
 
-features = {
-  enable_pii_redaction             = true
-  enable_managed_redis             = true
-  enable_usage_pipeline            = true
-  enable_unified_ai_api            = true
-  enable_api_center                = true
-  enable_azure_ai_search           = true
-  enable_document_intelligence     = true
-  enable_openai_realtime           = true
-  enable_mcp_samples               = true
-  enable_entra_auth                = true
-  enable_jwt_auth                  = true
-  enable_foundry_network_injection = false  # See Bicep main.bicep note: only enable with full BYO Standard Agent setup
-}
+apim_redis_cache_name = "redis-cache"
+
+# ─── 9. Extra LLM backends (Bedrock, Anthropic, Gemini, etc.) ──────────────
+
+llm_backends = [
+  # See attach-mode example for full shape; identical here.
+]
+
+# ─── 10. Azure AI Search backends exposed via APIM /search ─────────────────
+
+ai_search_instances = [
+  # { name = "ai-search-01", url = "https://my-search.search.windows.net/", description = "Primary AI Search" },
+]
+
+# ─── 11. Entra ID (JWT + AAD) ──────────────────────────────────────────────
 
 entra_tenant_id = "11111111-1111-1111-1111-111111111111"
-entra_client_id = "22222222-2222-2222-2222-222222222222"
+entra_client_id = "22222222-2222-2222-2222-222222222222"   # App Registration ID
+entra_audience  = ""   # default: "api://<entra_client_id>"
 
-# ---- Optional per-team access contracts ----
+# ─── 12. Azure Managed Redis ───────────────────────────────────────────────
+
+redis = {
+  sku_name            = "Balanced_B10"
+  sku_capacity        = 2                  # Enterprise SKUs only
+  minimum_tls_version = "1.2"
+}
+
+# ─── 13. Cosmos DB (usage store) ───────────────────────────────────────────
+
+cosmos_db_throughput = 400
+
+# ─── 14. Event Hub (usage stream) ──────────────────────────────────────────
+
+event_hub = {
+  sku                      = "Standard"
+  capacity                 = 1
+  auto_inflate_enabled     = true
+  maximum_throughput_units = 20
+  message_retention_days   = 7
+  public_network_access    = true   # needed for APIM v2 provisioning
+}
+
+# ─── 15. Logic App (usage processor) ───────────────────────────────────────
+
+logic_app_sku_capacity = 1
+
+# ─── 16. API Center ────────────────────────────────────────────────────────
+
+apic = {
+  sku      = "Free"            # Free | Standard
+  location = ""                # default: var.location; set explicitly if Foundry
+                               # region isn't in the API Center supported list
+                               # (allowed: australiaeast, canadacentral, centralindia,
+                               #  eastus, francecentral, swedencentral, uksouth, westeurope)
+}
+
+# ─── 17. Per-tenant access contracts ───────────────────────────────────────
+
 access_contracts = [
   {
     use_case = {
@@ -95,13 +230,37 @@ access_contracts = [
       environment   = "DEV"
     }
     services = [
-      { code = "OAI", api_names = ["azure-openai-api"],         endpoint_secret_name = "OAI_ENDPOINT", api_key_secret_name = "OAI_KEY" },
-      { code = "DOC", api_names = ["document-intelligence-api"], endpoint_secret_name = "DOC_ENDPOINT", api_key_secret_name = "DOC_KEY" },
+      {
+        code                    = "OAI"
+        api_names               = ["azure-openai-api"]
+        product_policy_xml_path = ""    # leave blank for default rate-limit policy
+        endpoint_secret_name    = "OAI_ENDPOINT"
+        api_key_secret_name     = "OAI_KEY"
+      },
+      {
+        code                    = "DOC"
+        api_names               = ["document-intelligence-api"]
+        product_policy_xml_path = ""
+        endpoint_secret_name    = "DOC_ENDPOINT"
+        api_key_secret_name     = "DOC_KEY"
+      },
     ]
+    product_terms    = "Standard tenant terms"
+    write_kv_secrets = true
     foundry_connection = {
       account_name        = "aif-citadel-swec-01"
       resource_group_name = "rg-citadel-dev"
       project_name        = "citadel-governance-project"
+      connection_prefix   = ""     # default: "Hub-<bu>-<usecase>-<env>"
+      shared_to_all       = false
     }
   },
+  # Second tenant example without Foundry connection:
+  # {
+  #   use_case = { business_unit = "FIN", use_case_name = "Reporting", environment = "PROD" }
+  #   services = [
+  #     { code = "OAI", api_names = ["azure-openai-api"], endpoint_secret_name = "OAI_ENDPOINT", api_key_secret_name = "OAI_KEY" }
+  #   ]
+  #   foundry_connection = null
+  # },
 ]
