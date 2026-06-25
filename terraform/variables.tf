@@ -17,8 +17,58 @@ variable "environment_name" {
 }
 
 variable "location" {
-  description = "Primary Azure region for provisioned resources."
+  description = <<-EOT
+    Default Azure region for provisioned resources. Used as a fallback when a
+    per-resource override (e.g. var.cosmos_location, var.apic.location) is empty.
+
+    The APIM service location is always FORCED to match var.network.vnet_location
+    because APIM V2 SKUs require the integration subnet to be in the same region
+    as the APIM service itself. Other resources can live in any region; their
+    private endpoints will be placed in the VNet's region (var.network.vnet_location)
+    regardless of where the resource lives.
+  EOT
   type        = string
+}
+
+# -- Per-resource region overrides ---------------------------------------
+# Leave blank to inherit var.location. Use these when the resource type
+# isn't available in your VNet's region (e.g. API Center in eastus while
+# your VNet is in eastus2). The private endpoint for the resource is still
+# created in var.network.vnet_location.
+
+variable "key_vault_location" {
+  type    = string
+  default = ""
+}
+
+variable "cosmos_location" {
+  type    = string
+  default = ""
+}
+
+variable "event_hub_location" {
+  type    = string
+  default = ""
+}
+
+variable "redis_location" {
+  type    = string
+  default = ""
+}
+
+variable "storage_location" {
+  type    = string
+  default = ""
+}
+
+variable "logic_app_location" {
+  type    = string
+  default = ""
+}
+
+variable "monitoring_location" {
+  type    = string
+  default = ""
 }
 
 variable "resource_group_name" {
@@ -108,6 +158,9 @@ variable "network" {
     Existing networking inputs. Every subnet must be in the SAME VNet (or peered if not).
 
       vnet_id                       : Resource ID of the existing VNet.
+      vnet_location                 : Azure region of the VNet. Required because every Private
+                                      Endpoint MUST be created in the same region as its subnet —
+                                      even when the target resource is in a different region.
       apim_subnet_id                : Subnet for APIM v2 stv2 (delegation not required for V2 SKUs but PE is placed in the PE subnet).
       private_endpoint_subnet_id    : Subnet that hosts every private endpoint.
       function_app_subnet_id        : Subnet (delegated to Microsoft.Web/serverFarms) for the Logic App Standard runtime.
@@ -115,6 +168,7 @@ variable "network" {
   EOT
   type = object({
     vnet_id                    = string
+    vnet_location              = string
     apim_subnet_id             = string
     private_endpoint_subnet_id = string
     function_app_subnet_id     = string

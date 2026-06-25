@@ -83,6 +83,18 @@ variable "network" {
   })
 }
 
+# variable "network" {
+#   description = "Greenfield VNet topology. Defaults mirror the Bicep accelerator's main.bicep."
+#   type = object({
+#     vnet_address_space             = optional(string, "10.170.0.0/24")
+#     apim_subnet_prefix             = optional(string, "10.170.0.0/26")
+#     private_endpoint_subnet_prefix = optional(string, "10.170.0.64/26")
+#     function_app_subnet_prefix     = optional(string, "10.170.0.128/26")
+#     agent_subnet_prefix            = optional(string, "10.170.0.192/26")
+#   })
+#   default = {}
+# }
+
 variable "private_dns_zone_ids" {
   type = any
 }
@@ -117,6 +129,47 @@ variable "entra_client_id" {
   default = ""
 }
 
+# ---- Cross-region location overrides (all optional) ----
+variable "key_vault_location" {
+  type    = string
+  default = ""
+}
+
+variable "cosmos_location" {
+  type    = string
+  default = ""
+}
+
+variable "event_hub_location" {
+  type    = string
+  default = ""
+}
+
+variable "redis_location" {
+  type    = string
+  default = ""
+}
+
+variable "storage_location" {
+  type    = string
+  default = ""
+}
+
+variable "logic_app_location" {
+  type    = string
+  default = ""
+}
+
+variable "monitoring_location" {
+  type    = string
+  default = ""
+}
+
+variable "apic" {
+  type    = any
+  default = {}
+}
+
 module "ai_hub_gateway" {
   source = "../../"
 
@@ -136,6 +189,16 @@ module "ai_hub_gateway" {
 
   apim     = var.apim
   features = var.features
+  apic     = var.apic
+
+  # Per-resource location overrides (cross-region scenario)
+  key_vault_location  = var.key_vault_location
+  cosmos_location     = var.cosmos_location
+  event_hub_location  = var.event_hub_location
+  redis_location      = var.redis_location
+  storage_location    = var.storage_location
+  logic_app_location  = var.logic_app_location
+  monitoring_location = var.monitoring_location
 
   ai_search_instances = var.ai_search_instances
   entra_tenant_id     = var.entra_tenant_id

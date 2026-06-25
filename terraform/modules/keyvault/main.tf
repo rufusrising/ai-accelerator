@@ -4,6 +4,11 @@
 #   - Grants the APIM user-assigned managed identity Key Vault Secrets User.
 #     The system-assigned identity is granted access by the root module
 #     AFTER APIM is created (chicken-and-egg avoidance, matches Bicep).
+#
+# Cross-region pattern:
+#   - var.location           = where the KV resource lives (any allowed region)
+#   - var.private_endpoint_location = where the PE lives (MUST equal VNet region).
+#     Defaults to var.location when blank.
 # --------------------------------------------------------------------
 
 variable "name" { type = string }
@@ -31,6 +36,13 @@ variable "private_endpoint_subnet_id" { type = string }
 variable "private_endpoint_name" { type = string }
 variable "dns_zone_id" { type = string }
 
+# PE region. Leave blank to inherit var.location. Must match the VNet that
+# contains private_endpoint_subnet_id when set explicitly.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
+
 variable "apim_uami_principal_id" {
   type    = string
   default = ""
@@ -56,7 +68,7 @@ resource "azurerm_key_vault" "this" {
 
 resource "azurerm_private_endpoint" "kv" {
   name                = var.private_endpoint_name
-  location            = var.location
+  location            = coalesce(var.private_endpoint_location, var.location)
   resource_group_name = var.resource_group_name
   subnet_id           = var.private_endpoint_subnet_id
   tags                = var.tags

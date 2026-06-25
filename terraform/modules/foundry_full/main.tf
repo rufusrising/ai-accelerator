@@ -67,6 +67,16 @@ variable "disable_local_auth" {
 
 variable "private_endpoint_subnet_id" { type = string }
 
+# Foundry PE region. Must match the VNet that owns private_endpoint_subnet_id.
+# Default is each Foundry instance's own region (which works only when
+# Foundry and VNet are co-located). For cross-region (Foundry in eastus2,
+# VNet in eastus) set this explicitly to the VNet region — Azure supports
+# cross-region private endpoints to Cognitive Services accounts.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
+
 variable "private_dns_zone_ids" {
   description = "DNS zone IDs required for the Foundry account PE (3 zones)."
   type = object({
@@ -248,8 +258,15 @@ resource "azapi_resource" "private_endpoint" {
   type      = "Microsoft.Network/privateEndpoints@2025-05-01"
   parent_id = "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/${var.resource_group_name}"
   name      = "${var.foundry_instances[count.index].name}-pe"
-  location  = coalesce(var.foundry_instances[count.index].location, var.location)
-  tags      = var.tags
+  # PE always lives in the VNet's region; coalesce falls back to the
+  # Foundry account region (co-located deployments) when the caller hasn't
+  # passed an explicit private_endpoint_location.
+  location = coalesce(
+    var.private_endpoint_location,
+    var.foundry_instances[count.index].location,
+    var.location,
+  )
+  tags = var.tags
 
   body = {
     properties = {

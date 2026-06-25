@@ -64,6 +64,15 @@ variable "public_network_access_enabled" {
 variable "pe_name" { type = string }
 variable "dns_zone_id" { type = string }
 
+# PE region. Defaults to var.location (which APIM itself uses); set explicitly
+# when the apim subnet's VNet is in a different region from var.location. APIM V2
+# subnet integration requires apim_subnet_id to be in the same region as APIM
+# itself, so this should normally equal var.location — exposed for completeness.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
+
 variable "uami_id" { type = string }
 variable "uami_client_id" { type = string }
 variable "uami_principal_id" { type = string }
@@ -121,6 +130,10 @@ variable "event_hub_endpoint" {
   type    = string
   default = ""
 }
+variable "enable_event_hub_loggers" {
+  type    = bool
+  default = false
+}
 variable "event_hub_name" {
   type    = string
   default = ""
@@ -176,12 +189,12 @@ resource "azurerm_api_management" "this" {
   # Security hardening — disables the deprecated cipher suites the Bicep
   # module disables via customProperties.
   security {
-    enable_backend_ssl30                              = false
-    enable_backend_tls10                              = false
-    enable_backend_tls11                              = false
-    enable_frontend_ssl30                             = false
-    enable_frontend_tls10                             = false
-    enable_frontend_tls11                             = false
+    backend_ssl30_enabled                             = false
+    backend_tls10_enabled                             = false
+    backend_tls11_enabled                             = false
+    frontend_ssl30_enabled                            = false
+    frontend_tls10_enabled                            = false
+    frontend_tls11_enabled                            = false
     tls_ecdhe_rsa_with_aes256_cbc_sha_ciphers_enabled = false
     tls_ecdhe_rsa_with_aes128_cbc_sha_ciphers_enabled = false
     tls_rsa_with_aes128_gcm_sha256_ciphers_enabled    = false
@@ -200,7 +213,7 @@ resource "azurerm_api_management" "this" {
 resource "azurerm_private_endpoint" "apim" {
   count               = local.use_pe ? 1 : 0
   name                = var.pe_name
-  location            = var.location
+  location            = coalesce(var.private_endpoint_location, var.location)
   resource_group_name = var.resource_group_name
   subnet_id           = var.private_endpoint_subnet_id
   tags                = var.tags
@@ -387,7 +400,7 @@ resource "azapi_resource" "azuremonitor_logger" {
 
 # Optional Event Hub usage loggers
 resource "azapi_resource" "eh_usage_logger" {
-  count     = var.event_hub_endpoint == "" ? 0 : 1
+  count     = var.enable_event_hub_loggers ? 1 : 0
   type      = "Microsoft.ApiManagement/service/loggers@2022-08-01"
   parent_id = azurerm_api_management.this.id
   name      = "usage-eventhub-logger"
@@ -406,7 +419,7 @@ resource "azapi_resource" "eh_usage_logger" {
 }
 
 resource "azapi_resource" "eh_pii_logger" {
-  count     = (var.event_hub_endpoint == "" || !var.enable_pii_redaction) ? 0 : 1
+  count     = (var.enable_event_hub_loggers && var.enable_pii_redaction) ? 1 : 0
   type      = "Microsoft.ApiManagement/service/loggers@2022-08-01"
   parent_id = azurerm_api_management.this.id
   name      = "pii-usage-eventhub-logger"
@@ -456,9 +469,8 @@ resource "azurerm_monitor_diagnostic_setting" "apim" {
     category_group = "AllLogs"
   }
 
-  metric {
+  enabled_metric {
     category = "AllMetrics"
-    enabled  = true
   }
 }
 
@@ -467,7 +479,7 @@ resource "azurerm_monitor_diagnostic_setting" "apim" {
 # ============================================================
 
 resource "azapi_resource" "redis_cache" {
-  count     = (var.enable_redis_cache && var.redis_connection_string != "") ? 1 : 0
+  count     = var.enable_redis_cache ? 1 : 0
   type      = "Microsoft.ApiManagement/service/caches@2024-06-01-preview"
   parent_id = azurerm_api_management.this.id
   name      = var.redis_cache_entity_name
@@ -509,7 +521,7 @@ resource "azurerm_api_management_backend" "content_safety" {
 
 # Foundry embeddings backend for APIM semantic cache.
 resource "azurerm_api_management_backend" "embeddings" {
-  count               = (var.enable_embeddings_backend && var.embeddings_backend_url != "") ? 1 : 0
+  count               = var.enable_embeddings_backend ? 1 : 0
   name                = "foundry-embeddings"
   resource_group_name = var.resource_group_name
   api_management_name = azurerm_api_management.this.name

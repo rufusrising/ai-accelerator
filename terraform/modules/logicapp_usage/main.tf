@@ -22,6 +22,16 @@ variable "uami_principal_id" { type = string }
 variable "function_app_subnet_id" { type = string }
 variable "private_endpoint_subnet_id" { type = string }
 
+# PE region — must equal the VNet's region. Defaults to var.location. Also
+# used as the location for the Logic App's VNet integration NIC, so for a
+# truly cross-region deployment (Logic App in region A, VNet in region B)
+# leave the Logic App in the VNet's region (set var.location = vnet region)
+# and only put OTHER services like KV / Cosmos / EH in a different region.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
+
 variable "storage_blob_dns_zone_id" { type = string }
 variable "storage_file_dns_zone_id" { type = string }
 variable "storage_table_dns_zone_id" { type = string }
@@ -105,12 +115,14 @@ locals {
     table = { name = var.storage_table_pe_name, subresource = "table", dns = var.storage_table_dns_zone_id }
     queue = { name = var.storage_queue_pe_name, subresource = "queue", dns = var.storage_queue_dns_zone_id }
   }
+
+  pe_location = coalesce(var.private_endpoint_location, var.location)
 }
 
 resource "azurerm_private_endpoint" "storage" {
   for_each            = local.pe_map
   name                = each.value.name
-  location            = var.location
+  location            = local.pe_location
   resource_group_name = var.resource_group_name
   subnet_id           = var.private_endpoint_subnet_id
   tags                = var.tags

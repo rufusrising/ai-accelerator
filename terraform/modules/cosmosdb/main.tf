@@ -24,6 +24,12 @@ variable "throughput" {
 variable "private_endpoint_subnet_id" { type = string }
 variable "private_endpoint_name" { type = string }
 variable "dns_zone_id" { type = string }
+
+# PE region — must equal the VNet's region. Defaults to var.location.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
 variable "consistency_level" {
   type    = string
   default = "Session"
@@ -91,7 +97,7 @@ resource "azurerm_cosmosdb_sql_container" "containers" {
 
 resource "azurerm_private_endpoint" "cosmos" {
   name                = var.private_endpoint_name
-  location            = var.location
+  location            = coalesce(var.private_endpoint_location, var.location)
   resource_group_name = var.resource_group_name
   subnet_id           = var.private_endpoint_subnet_id
   tags                = var.tags

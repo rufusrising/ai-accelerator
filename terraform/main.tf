@@ -68,7 +68,7 @@ module "monitoring" {
   source = "./modules/monitoring"
 
   resource_group_name        = data.azurerm_resource_group.rg.name
-  location                   = var.location
+  location                   = coalesce(var.monitoring_location, var.location)
   tags                       = local.effective_tags
   log_analytics_name         = local.names.log_analytics
   apim_app_insights_name     = local.names.apim_appinsights
@@ -87,7 +87,8 @@ module "key_vault" {
 
   name                       = local.names.key_vault
   resource_group_name        = data.azurerm_resource_group.rg.name
-  location                   = var.location
+  location                   = coalesce(var.key_vault_location, var.location)
+  private_endpoint_location  = var.network.vnet_location
   tags                       = local.effective_tags
   tenant_id                  = coalesce(var.entra_tenant_id, data.azurerm_client_config.current.tenant_id)
   private_endpoint_subnet_id = var.network.private_endpoint_subnet_id
@@ -106,7 +107,8 @@ module "event_hub" {
 
   name                       = local.names.event_hub_namespace
   resource_group_name        = data.azurerm_resource_group.rg.name
-  location                   = var.location
+  location                   = coalesce(var.event_hub_location, var.location)
+  private_endpoint_location  = var.network.vnet_location
   tags                       = local.effective_tags
   sku                        = var.event_hub.sku
   capacity                   = var.event_hub.capacity
@@ -130,7 +132,8 @@ module "cosmos_db" {
 
   account_name               = local.names.cosmos_db
   resource_group_name        = data.azurerm_resource_group.rg.name
-  location                   = var.location
+  location                   = coalesce(var.cosmos_location, var.location)
+  private_endpoint_location  = var.network.vnet_location
   tags                       = local.effective_tags
   throughput                 = var.cosmos_db_throughput
   private_endpoint_subnet_id = var.network.private_endpoint_subnet_id
@@ -170,7 +173,8 @@ module "redis" {
 
   name                       = local.names.redis
   resource_group_name        = data.azurerm_resource_group.rg.name
-  location                   = var.location
+  location                   = coalesce(var.redis_location, var.location)
+  private_endpoint_location  = var.network.vnet_location
   tags                       = local.effective_tags
   sku_name                   = var.redis.sku_name
   sku_capacity               = var.redis.sku_capacity
@@ -204,7 +208,12 @@ module "logic_app_usage" {
   storage_account_name           = local.names.storage_account
   logic_app_name                 = local.names.logic_app
   resource_group_name            = data.azurerm_resource_group.rg.name
-  location                       = var.location
+  # Logic App needs to be in the SAME region as its function_app_subnet
+  # because the runtime VNet integration NIC must be co-located with the
+  # delegated subnet. Storage account is co-located too. Only the PE
+  # location can diverge (but in practice always equals the VNet region).
+  location                       = coalesce(var.logic_app_location, var.storage_location, var.network.vnet_location)
+  private_endpoint_location      = var.network.vnet_location
   tags                           = local.effective_tags
   uami_id                        = azurerm_user_assigned_identity.logic_app[0].id
   uami_principal_id              = azurerm_user_assigned_identity.logic_app[0].principal_id
@@ -246,10 +255,14 @@ module "logic_app_usage" {
 module "apim_core" {
   source = "./modules/apim_core"
 
-  name                           = local.names.apim
-  resource_group_name            = data.azurerm_resource_group.rg.name
-  location                       = var.location
-  tags                           = local.effective_tags
+  name                = local.names.apim
+  resource_group_name = data.azurerm_resource_group.rg.name
+  # APIM V2 subnet integration requires APIM to be in the SAME region as the
+  # apim subnet. Force the APIM location to the VNet's region — overriding
+  # var.location if it differs — so misconfiguration is impossible.
+  location                  = var.network.vnet_location
+  private_endpoint_location = var.network.vnet_location
+  tags                      = local.effective_tags
   sku_name                       = var.apim.sku_name
   sku_capacity                   = var.apim.sku_capacity
   publisher_name                 = var.apim.publisher_name
@@ -281,6 +294,7 @@ module "apim_core" {
   redis_cache_entity_name        = var.apim_redis_cache_name
   enable_embeddings_backend      = local.features.enable_managed_redis
   embeddings_backend_url         = local.primary_foundry_embeddings_url
+  enable_event_hub_loggers       = local.features.enable_usage_pipeline
   event_hub_endpoint             = local.features.enable_usage_pipeline ? module.event_hub[0].endpoint : ""
   event_hub_name                 = local.features.enable_usage_pipeline ? module.event_hub[0].usage_hub_name : ""
   event_hub_pii_name             = local.features.enable_usage_pipeline ? module.event_hub[0].pii_hub_name : ""

@@ -47,6 +47,12 @@ variable "private_endpoint_subnet_id" { type = string }
 variable "private_endpoint_name" { type = string }
 variable "dns_zone_id" { type = string }
 
+# PE region — must equal the VNet's region. Defaults to var.location.
+variable "private_endpoint_location" {
+  type    = string
+  default = ""
+}
+
 resource "azurerm_eventhub_namespace" "this" {
   name                          = var.name
   location                      = var.location
@@ -93,7 +99,7 @@ resource "azurerm_eventhub_consumer_group" "pii_ingest" {
 
 resource "azurerm_private_endpoint" "eh" {
   name                = var.private_endpoint_name
-  location            = var.location
+  location            = coalesce(var.private_endpoint_location, var.location)
   resource_group_name = var.resource_group_name
   subnet_id           = var.private_endpoint_subnet_id
   tags                = var.tags

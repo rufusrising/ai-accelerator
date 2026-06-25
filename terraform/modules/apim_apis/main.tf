@@ -124,8 +124,8 @@ resource "azurerm_api_management_named_value" "backend_api_keys" {
 
 locals {
   backend_credentials_by_id = {
-    for cfg in var.llm_backends : cfg.backend_id => (
-      cfg.auth_type == "managed-identity" ? {
+    for cfg in var.llm_backends : cfg.backend_id => jsondecode(
+      cfg.auth_type == "managed-identity" ? jsonencode({
         managedIdentity = {
           clientId = var.uami_client_id
           resource = "https://cognitiveservices.azure.com"
@@ -133,28 +133,29 @@ locals {
         header = {
           "x-ms-client-id" = [var.uami_client_id]
         }
-      } :
-      cfg.auth_type == "api-key-bearer" ? {
+      }) :
+      cfg.auth_type == "api-key-bearer" ? jsonencode({
         header = {
           "Authorization" = ["{{${coalesce(cfg.named_value_key, "${cfg.backend_id}-key")}}}"]
         }
-      } :
-      cfg.auth_type == "api-key-header" ? {
+      }) :
+      cfg.auth_type == "api-key-header" ? jsonencode({
         header = {
           "api-key" = ["{{${coalesce(cfg.named_value_key, "${cfg.backend_id}-key")}}}"]
         }
-      } :
-      cfg.auth_type == "api-key-gemini" ? {
+      }) :
+      cfg.auth_type == "api-key-gemini" ? jsonencode({
         header = {
           "x-goog-api-key" = ["{{${coalesce(cfg.named_value_key, "${cfg.backend_id}-key")}}}"]
         }
-      } :
-      cfg.auth_type == "api-key-anthropic" ? {
+      }) :
+      cfg.auth_type == "api-key-anthropic" ? jsonencode({
         header = {
           "x-api-key"         = ["{{${coalesce(cfg.named_value_key, "${cfg.backend_id}-key")}}}"]
           "anthropic-version" = ["{{anthropic-version}}"]
         }
-      } : {}
+      }) :
+      jsonencode({})
     )
   }
 }
